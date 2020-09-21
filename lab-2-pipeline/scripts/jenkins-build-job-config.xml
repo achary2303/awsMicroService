@@ -1,0 +1,138 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>REPO_NAME</name>
+          <description></description>
+          <defaultValue>{{REPO_NAME}}</defaultValue>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>CFN_STACK_PARAMS</name>
+          <description></description>
+          <defaultValue>{{CFN_STACK_PARAMS}}</defaultValue>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="com.amazonaws.codepipeline.jenkinsplugin.AWSCodePipelineSCM" plugin="aws-codepipeline@0.17">
+    <clearWorkspace>true</clearWorkspace>
+    <projectName>{{PROJECT_NAME}}</projectName>
+    <actionTypeCategory>Build</actionTypeCategory>
+    <actionTypeProvider>{{ACTION_TYPE_PROVIDER}}</actionTypeProvider>
+    <actionTypeVersion>1</actionTypeVersion>
+    <region>{{AWS_REGION}}</region>
+    <awsAccessKey></awsAccessKey>
+    <awsSecretKey></awsSecretKey>
+    <proxyHost></proxyHost>
+    <proxyPort>0</proxyPort>
+    <awsClientFactory/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers>
+    <hudson.triggers.SCMTrigger>
+      <spec>* * * * *</spec>
+      <ignorePostCommitHooks>false</ignorePostCommitHooks>
+    </hudson.triggers.SCMTrigger>
+  </triggers>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash -ex
+
+DOCKER_FILE="Dockerfile"
+MICROSERVICE_TEMPLATE="microservice.yaml"
+OUTPUT_DIR="output"
+POSTMAN_COLLECTION_FILE="postman-collection.json"
+
+# Check repo name parameter exists
+if [ -z ${REPO_NAME} ]; then
+    echo "Environment variable: REPO_NAME not defined. Exiting."
+    exit 1
+fi
+
+# Check Dockerfile is file in local dir
+if [ ! -f "${DOCKER_FILE}" ]; then
+    echo "Cannot find file: ${DOCKER_FILE}. Exiting."
+    exit 1
+fi
+
+# Check Micoservice CFN template is file in local dir
+if [ ! -f "${MICROSERVICE_TEMPLATE}" ]; then
+    echo "Cannot find file: ${MICROSERVICE_TEMPLATE}. Exiting."
+    exit 1
+fi
+
+#Convert to lower case
+ECR_REPO_NAME=$(echo "$REPO_NAME" | awk '{print tolower($0)}')
+INSTANCE_IDENTITY=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document)
+AWS_REGION=$(echo ${INSTANCE_IDENTITY} | jq -r '.region')
+AWS_ACCOUNT_ID=$(echo ${INSTANCE_IDENTITY} | jq -r '.accountId')
+
+#Set the repository address
+ECR_REPO_ADDRESS="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+# set the image tag
+IMAGE_TAG="v_"${BUILD_NUMBER}
+
+#Build the container and tag with latest tag
+docker build --no-cache -t "${ECR_REPO_ADDRESS}/${ECR_REPO_NAME}:${IMAGE_TAG}" .
+docker tag "${ECR_REPO_ADDRESS}/${ECR_REPO_NAME}:${IMAGE_TAG}" "${ECR_REPO_ADDRESS}/${ECR_REPO_NAME}:latest"
+
+# create an ECR repository if one doesn't exist
+repoArn=$(aws ecr describe-repositories --region ${AWS_REGION} --output json | jq -r --arg x ${ECR_REPO_NAME} '.repositories[] | select(.repositoryName==$x) | .repositoryArn')
+if [ -z "$repoArn" ]; then
+    echo "Repository: ${ECR_REPO_NAME} not found. Creating new one in ECR region: ${AWS_REGION}..."
+    aws ecr create-repository --repository-name ${ECR_REPO_NAME} --region ${AWS_REGION}
+else
+    echo "Found existing repository: $repoArn"
+fi
+
+#Login to ECR
+aws ecr get-login --region ${AWS_REGION} | sh
+
+#Push image to ECR
+docker push "${ECR_REPO_ADDRESS}/${ECR_REPO_NAME}:${IMAGE_TAG}"
+docker push "${ECR_REPO_ADDRESS}/${ECR_REPO_NAME}:latest"
+
+# Output the microservice template file to the output dir
+if [ ! -d "${OUTPUT_DIR}" ]; then
+  mkdir "${OUTPUT_DIR}"
+fi
+
+# Output the CFN parameters to a file in the output dir
+echo "${CFN_STACK_PARAMS}" > "${OUTPUT_DIR}"/cfn_stack_params.json
+# Update the Docker image tag in the CFN template
+sed  -i 's/{{IMAGE_TAG}}/'${IMAGE_TAG}'/g' "${OUTPUT_DIR}"/cfn_stack_params.json
+
+# Copy the CFN template to the output dir
+cp "${MICROSERVICE_TEMPLATE}" "${OUTPUT_DIR}"/
+
+# Copy the Postman test file to the output directory
+if [ -e "${POSTMAN_COLLECTION_FILE}" ]; then
+  cp "${POSTMAN_COLLECTION_FILE}" "${OUTPUT_DIR}"/
+else
+  echo "File: ${POSTMAN_COLLECTION_FILE} does not exist"
+fi
+      </command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers>
+    <com.amazonaws.codepipeline.jenkinsplugin.AWSCodePipelinePublisher plugin="aws-codepipeline@0.17">
+      <outputArtifacts>
+        <com.amazonaws.codepipeline.jenkinsplugin.OutputArtifact>
+          <location>output</location>
+        </com.amazonaws.codepipeline.jenkinsplugin.OutputArtifact>
+      </outputArtifacts>
+      <awsClientFactory/>
+    </com.amazonaws.codepipeline.jenkinsplugin.AWSCodePipelinePublisher>
+  </publishers>
+  <buildWrappers/>
+</project>

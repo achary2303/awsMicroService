@@ -1,0 +1,17 @@
+Description: "Running Container-Enabled Microservices on AWS Bootcamp: Lab 2 - Jenkins ECS Service CloudFormation Template"
+Resources:
+  JenkinsService:
+    Type: "AWS::ECS::Service"
+    Properties:
+      Cluster: !ImportValue JenkinsCluster
+      DesiredCount: "1"
+      Role: !ImportValue ECSServiceRoleArn
+      TaskDefinition: !ImportValue JenkinsTaskDefinition
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+      LoadBalancers:
+        -
+          ContainerName: "jenkins"
+          ContainerPort: "8080"
+          TargetGroupArn: !ImportValue JenkinsALBTargetGroup

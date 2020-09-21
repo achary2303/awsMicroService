@@ -1,0 +1,53 @@
+Description: "Running Container-Enabled Microservices on AWS Bootcamp: Lab 2 - Run the SSM commands on the CLI instance to deploy the microservices"
+Parameters:
+  LabName:
+    Type: "String"
+    Description: "The name of the lab"
+    ConstraintDescription: "must be a valid lab name."
+    Default: "lab-2-pipeline"
+    AllowedValues:
+      - lab-1-microservices
+      - lab-2-pipeline
+      - lab-3-scale
+      - lab-4-security
+Resources:
+  DeployMustacheMeWebServer:
+    Type: "Custom::DeployMustacheMeWebServer"
+    Properties:
+      ServiceToken: !ImportValue RunSsmCommandFunctionArn
+      VPC: !ImportValue VPC
+      TagName: "CLI Instance"
+      Region: !Ref "AWS::Region"
+      Description: "Create the MustacheMeWebServer pipeline and deploy service"
+      Commands:
+        - echo "Starting script"
+        - !Sub runuser -l ec2-user -c '/home/ec2-user/${LabName}/scripts/deploy-microservice.sh MustacheMeWebServer 8000'
+        - echo "Script completed successfully."
+
+  DeployMustacheMeProcessor:
+    Type: "Custom::DeployMustacheMeProcessor"
+    DependsOn: DeployMustacheMeWebServer
+    Properties:
+      ServiceToken: !ImportValue RunSsmCommandFunctionArn
+      VPC: !ImportValue VPC
+      TagName: "CLI Instance"
+      Region: !Ref "AWS::Region"
+      Description: "Create the DeployMustacheMeProcessor pipeline and deploy service"
+      Commands:
+        - echo "Starting script"
+        - !Sub runuser -l ec2-user -c '/home/ec2-user/${LabName}/scripts/deploy-microservice.sh MustacheMeProcessor 8082'
+        - echo "Script completed successfully."
+
+  DeployMustacheMeInfo:
+    Type: "Custom::DeployMustacheMeInfo"
+    DependsOn: DeployMustacheMeProcessor
+    Properties:
+      ServiceToken: !ImportValue RunSsmCommandFunctionArn
+      VPC: !ImportValue VPC
+      TagName: "CLI Instance"
+      Region: !Ref "AWS::Region"
+      Description: "Create the DeployMustacheMeInfo pipeline and deploy service"
+      Commands:
+        - echo "Starting script"
+        - !Sub runuser -l ec2-user -c '/home/ec2-user/${LabName}/scripts/deploy-microservice.sh MustacheMeInfo 8092'
+        - echo "Script completed successfully."

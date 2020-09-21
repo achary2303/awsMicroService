@@ -1,0 +1,68 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>POSTMAN_COLLECTION_TEMPLATE</name>
+          <description></description>
+          <defaultValue>{{POSTMAN_COLLECTION_FILE}}</defaultValue>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TEST_URL</name>
+          <description></description>
+          <defaultValue>{{TEST_URL}}</defaultValue>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="com.amazonaws.codepipeline.jenkinsplugin.AWSCodePipelineSCM" plugin="aws-codepipeline@0.17">
+    <clearWorkspace>true</clearWorkspace>
+    <projectName>{{PROJECT_NAME}}</projectName>
+    <actionTypeCategory>Test</actionTypeCategory>
+    <actionTypeProvider>{{ACTION_TYPE_PROVIDER}}</actionTypeProvider>
+    <actionTypeVersion>1</actionTypeVersion>
+    <region>{{AWS_REGION}}</region>
+    <awsAccessKey></awsAccessKey>
+    <awsSecretKey></awsSecretKey>
+    <proxyHost></proxyHost>
+    <proxyPort>0</proxyPort>
+    <awsClientFactory/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers>
+    <hudson.triggers.SCMTrigger>
+      <spec>* * * * *</spec>
+      <ignorePostCommitHooks>false</ignorePostCommitHooks>
+    </hudson.triggers.SCMTrigger>
+  </triggers>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash -ex
+cat "$POSTMAN_COLLECTION_TEMPLATE" | mo > postman-collection-final.json
+
+newman run postman-collection-final.json --reporters junit
+      </command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers>
+    <hudson.tasks.junit.JUnitResultArchiver plugin="junit@1.18">
+      <testResults>newman/*.xml</testResults>
+      <keepLongStdio>false</keepLongStdio>
+      <healthScaleFactor>1.0</healthScaleFactor>
+      <allowEmptyResults>false</allowEmptyResults>
+    </hudson.tasks.junit.JUnitResultArchiver>
+    <com.amazonaws.codepipeline.jenkinsplugin.AWSCodePipelinePublisher plugin="aws-codepipeline@0.17">
+      <outputArtifacts/>
+      <awsClientFactory/>
+    </com.amazonaws.codepipeline.jenkinsplugin.AWSCodePipelinePublisher>
+  </publishers>
+  <buildWrappers/>
+</project>

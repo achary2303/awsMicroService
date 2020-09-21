@@ -1,0 +1,295 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+
+  "Description": "Running Container-Enabled Microservices on AWS Bootcamp: Lab 2 - Simulation CloudFormation Template - THIS TEMPLATE HAS BEEN MODIFIED BY SREE FOR LOAD AND SCALE TEST",
+
+  "Parameters": {
+
+    "JenkinsInstanceType": {
+      "Type": "String",
+      "Description": "Jenkins instance type",
+      "Default": "t2.medium",
+      "AllowedValues": ["t2.micro","t2.small","t2.medium", "t2.large"],
+      "ConstraintDescription": "must be a valid T2 EC2 instance type."
+    },
+
+    "EcsInstanceType": {
+      "Type": "String",
+      "Description": "ECS instance type",
+      "Default": "t2.small",
+      "AllowedValues": ["t2.micro","t2.small","t2.medium", "t2.large"],
+      "ConstraintDescription": "must be a valid T2 EC2 instance type."
+    },
+
+    "CLIInstanceType": {
+      "Type": "String",
+      "Description": "CLI instance type",
+      "Default": "t2.small",
+      "AllowedValues": ["t2.micro","t2.small","t2.medium", "t2.large"],
+      "ConstraintDescription": "must be a valid T2 EC2 instance type."
+    },
+
+    "KeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the EC2 instances"
+    },
+
+    "SourceCidr": {
+      "Type": "String",
+      "Description": "Optional - CIDR/IP range for instance outside access - defaults to 0.0.0.0/0",
+      "Default": "0.0.0.0/0"
+    },
+
+    "S3BucketName": {
+      "Type": "String",
+      "Description": "Name of the S3 bucket where the lab resources are stored.",
+      "Default": "us-east-1-aws-staging"
+    },
+
+    "S3PathPrefix": {
+      "Type": "String",
+      "Description": "The path prefix where lab resources are stored.",
+      "Default": "awsu-bootcamp/AWS-300-RCM/v3.0/"
+    },
+
+    "AdministratorPassword": {
+      "Type": "String",
+      "NoEcho": "true",
+      "MinLength" : "5",
+      "MaxLength" : "41",
+      "AllowedPattern" : "[a-zA-Z0-9]*"
+    },
+
+    "LabName": {
+      "Type": "String",
+      "Description": "The name of the lab",
+      "AllowedValues": ["lab-1-microservices","lab-2-pipeline", "lab-3-scale", "lab-4-security"],
+      "ConstraintDescription": "must be a valid lab name.",
+      "Default": "lab-2-pipeline"
+    },
+
+    "MicroserviceName": {
+      "Type": "String",
+      "Description": "The name of the example microservice.",
+      "Default": "Hello-World"
+    },
+
+    "RepositoryName": {
+      "Type": "String",
+      "Description": "The name of the repository.",
+      "Default": "hello-world"
+    }
+  },
+
+  "Resources": {
+
+    "NetworkStack": {
+       "Type" : "AWS::CloudFormation::Stack",
+       "Properties" : {
+         "TemplateURL" : {"Fn::Join": [ "", ["https://", { "Ref": "S3BucketName" }, ".s3.amazonaws.com/", { "Ref": "S3PathPrefix" }, "/scripts/network.template"]]},
+         "TimeoutInMinutes" : "10",
+         "Tags": [
+           {
+             "Key": "StackType",
+             "Value": "Network"
+           },
+           {
+             "Key": "LabName",
+             "Value": { "Ref": "LabName" }
+           }
+         ]
+       }
+    },
+
+    "EcsClusterStack": {
+       "Type" : "AWS::CloudFormation::Stack",
+       "DependsOn": ["NetworkStack"],
+       "Properties" : {
+         "Parameters" : {
+           "VPC": {"Fn::GetAtt": [ "NetworkStack", "Outputs.VPC" ]},
+           "PublicSubnet1": {"Fn::GetAtt": [ "NetworkStack", "Outputs.PublicSubnet1" ]},
+           "PublicSubnet2": {"Fn::GetAtt": [ "NetworkStack", "Outputs.PublicSubnet2" ]},
+           "KeyName": { "Ref": "KeyName" },
+           "SourceCidr": { "Ref": "SourceCidr" },
+           "InstanceType": { "Ref": "EcsInstanceType" },
+           "ALBSecurityGroup": {"Fn::GetAtt": [ "NetworkStack", "Outputs.ALBSecurityGroup" ]}
+         },
+         "TemplateURL" : {"Fn::Join": [ "", ["https://", { "Ref": "S3BucketName" }, ".s3.amazonaws.com/", { "Ref": "S3PathPrefix" },  "/scripts/ecs-cluster.template"]]},
+         "TimeoutInMinutes" : "10",
+         "Tags": [
+           {
+             "Key": "StackType",
+             "Value": "EcsCluster"
+           },
+           {
+             "Key": "LabName",
+             "Value": { "Ref": "LabName" }
+           }
+         ]
+       }
+    },
+
+    "CLIInstanceStack": {
+       "Type" : "AWS::CloudFormation::Stack",
+       "DependsOn": ["NetworkStack"],
+       "Properties" : {
+         "Parameters" : {
+           "VPC": {"Fn::GetAtt": [ "NetworkStack", "Outputs.VPC" ]},
+           "Subnet": {"Fn::GetAtt": [ "NetworkStack", "Outputs.PublicSubnet1" ]},
+           "KeyName": { "Ref": "KeyName" },
+           "SourceCidr": { "Ref": "SourceCidr" },
+           "InstanceType": { "Ref": "CLIInstanceType" },
+           "LabName": { "Ref": "LabName" },
+           "S3BucketName": { "Ref": "S3BucketName" },
+           "S3PathPrefix": { "Ref": "S3PathPrefix" }
+         },
+         "TemplateURL" : {"Fn::Join": [ "", ["https://", { "Ref": "S3BucketName" }, ".s3.amazonaws.com/", { "Ref": "S3PathPrefix" },  "/scripts/cli-instance.template"]]},
+         "TimeoutInMinutes" : "10",
+         "Tags": [
+           {
+             "Key": "StackType",
+             "Value": "CLIInstance"
+           },
+           {
+             "Key": "LabName",
+             "Value": { "Ref": "LabName" }
+           }
+         ]
+       }
+    },
+
+    "LambdaStack": {
+       "Type" : "AWS::CloudFormation::Stack",
+       "Properties" : {
+         "Parameters" : {
+           "S3BucketName": { "Ref": "S3BucketName" },
+           "S3PathPrefix": { "Ref": "S3PathPrefix" },
+           "LabName": { "Ref": "LabName" }
+         },
+         "TemplateURL" : {"Fn::Join": [ "", ["https://", { "Ref": "S3BucketName" }, ".s3.amazonaws.com/", { "Ref": "S3PathPrefix" },  "/scripts/lambda-functions.template"]]},
+         "TimeoutInMinutes" : "10",
+         "Tags": [
+           {
+             "Key": "StackType",
+             "Value": "Lambda"
+           },
+           {
+             "Key": "LabName",
+             "Value": { "Ref": "LabName" }
+           }
+         ]
+       }
+    },
+
+    "JenkinsStack": {
+       "Type" : "AWS::CloudFormation::Stack",
+       "DependsOn": ["NetworkStack"],
+       "Properties" : {
+         "Parameters" : {
+           "VPC": {"Fn::GetAtt": [ "NetworkStack", "Outputs.VPC" ]},
+           "PublicSubnet1": {"Fn::GetAtt": [ "NetworkStack", "Outputs.PublicSubnet1" ]},
+           "PublicSubnet2": {"Fn::GetAtt": [ "NetworkStack", "Outputs.PublicSubnet2" ]},
+           "PrivateSubnet1": {"Fn::GetAtt": [ "NetworkStack", "Outputs.PrivateSubnet1" ]},
+           "PrivateSubnet2": {"Fn::GetAtt": [ "NetworkStack", "Outputs.PrivateSubnet2" ]},
+           "KeyName": { "Ref": "KeyName" },
+           "SourceCidr": { "Ref": "SourceCidr" },
+           "InstanceType": { "Ref": "JenkinsInstanceType" },
+           "AdministratorPassword": {"Ref": "AdministratorPassword"},
+           "S3BucketName": { "Ref": "S3BucketName" },
+           "S3PathPrefix": { "Ref": "S3PathPrefix" },
+           "ALBListenerArn": {"Fn::GetAtt": [ "NetworkStack", "Outputs.ALBListenerArn" ]},
+           "ALBSecurityGroup": {"Fn::GetAtt": [ "NetworkStack", "Outputs.ALBSecurityGroup" ]},
+           "BuildJenkinsFlag": "false"
+         },
+         "TemplateURL" : {"Fn::Join": [ "", ["https://", { "Ref": "S3BucketName" }, ".s3.amazonaws.com/", { "Ref": "S3PathPrefix" },  "/scripts/jenkins-service.template"]]},
+         "TimeoutInMinutes" : "20",
+         "Tags": [
+           {
+             "Key": "StackType",
+             "Value": "Jenkins"
+           },
+           {
+             "Key": "LabName",
+             "Value": { "Ref": "LabName" }
+           }
+         ]
+       }
+    },
+
+    "DeliveryPipelineMain": {
+       "Type" : "AWS::CloudFormation::Stack",
+       "DependsOn": ["NetworkStack", "LambdaStack"],
+       "Properties" : {
+         "Parameters" : {
+           "JenkinsURL": {"Fn::Join": [ "", ["http://", {"Fn::GetAtt": [ "NetworkStack", "Outputs.ALBDnsName" ]}, "/jenkins"]]},
+           "LookupDateFunctionArn": {"Fn::GetAtt": [ "LambdaStack", "Outputs.LookupDateFunctionArn" ]}
+         },
+         "TemplateURL" : {"Fn::Join": [ "", ["https://", { "Ref": "S3BucketName" }, ".s3.amazonaws.com/", { "Ref": "S3PathPrefix" },  "/scripts/delivery-pipeline-main.template"]]},
+         "TimeoutInMinutes" : "10",
+         "Tags": [
+           {
+             "Key": "StackType",
+             "Value": "DeliveryPipelineMain"
+           },
+           {
+             "Key": "LabName",
+             "Value": { "Ref": "LabName" }
+           }
+         ]
+       }
+    }
+  },
+
+  "Outputs": {
+
+    "JenkinsURL": {
+      "Description": "The public HTTP endpoint of the Jenkins server.",
+      "Value": {"Fn::Join": [ "", ["http://", {"Fn::GetAtt": [ "NetworkStack", "Outputs.ALBDnsName" ]}, "/jenkins/"]]}
+    },
+
+    "CLIInstanceDnsName": {
+      "Description": "The public DNS name of the CLI instance.",
+      "Value": {"Fn::GetAtt": [ "CLIInstanceStack", "Outputs.PublicDnsName" ]}
+    },
+
+    "CodePipelineBucket": {
+      "Description": "The name of the S3 bucket for CodePipeline.",
+      "Value": {"Fn::GetAtt": [ "DeliveryPipelineMain", "Outputs.CodePipelineBucket" ]}
+    },
+
+    "CodePipelineServiceRoleArn": {
+      "Description": "The ARN of the CodePipeline service role.",
+      "Value": {"Fn::GetAtt": [ "DeliveryPipelineMain", "Outputs.CodePipelineServiceRoleArn" ]}
+    },
+
+    "JenkinsCustomProvider": {
+      "Description": "The name of the CodePipeline Jenkins custom provider.",
+      "Value": {"Fn::GetAtt": [ "DeliveryPipelineMain", "Outputs.JenkinsProvider" ]}
+    },
+
+    "CodeCommitResourceFunctionArn": {
+      "Description": "The name of the CodePipeline Jenkins custom provider.",
+      "Value": {"Fn::GetAtt": [ "LambdaStack", "Outputs.CodeCommitRepoFunctionArn" ]}
+    },
+
+    "JenkinsJobResourceFunctionArn": {
+      "Description": "The ARN of the Lambda function that manages the Jenkins jobs.",
+      "Value": {"Fn::GetAtt": [ "LambdaStack", "Outputs.ManageJenkinsJobFunctionArn" ]}
+    },
+
+    "CreateUpdateStackFunctionName": {
+      "Description": "The ARN of the Lambda function that manages the CFN stacks.",
+      "Value": {"Fn::GetAtt": [ "LambdaStack", "Outputs.CreateUpdateCfnStackFunctionName" ]}
+    },
+
+    "ECSCluster": {
+      "Description": "The name of the ECS cluster.",
+      "Value": {"Fn::GetAtt": [ "EcsClusterStack", "Outputs.ClusterName"]}
+    },
+
+    "S3BucketPrefix": {
+      "Description": "The name of the S3 bucket path prefix where the lab artifacts are stored",
+      "Value": { "Fn::Join" : [ "", ["https://", { "Ref": "S3BucketName" }, ".s3.amazonaws.com/", { "Ref": "S3PathPrefix" },  "/"]]}
+    }
+  }
+}

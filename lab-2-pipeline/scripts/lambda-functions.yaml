@@ -1,0 +1,293 @@
+Description: "Running Container-Enabled Microservices on AWS Bootcamp: Lab 2 - Lambda Functions CloudFormation Template"
+Parameters:
+  S3BucketName:
+    Type: "String"
+    Description: "Name of the S3 bucket where the source code is stored."
+
+  S3PathPrefix:
+    Type: "String"
+    Description: "S3 Path where source and scripts are found for the lab."
+
+  LabName:
+    Type: "String"
+    Description: "The name of the lab"
+    ConstraintDescription: "must be a valid lab name."
+    Default: "lab-2-pipeline"
+    AllowedValues:
+      - lab-1-microservices
+      - lab-2-pipeline
+      - lab-3-scale
+      - lab-4-security
+
+Resources:
+  LookupDateFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "index.handler"
+      Role: !GetAtt LookupDateRole.Arn
+      Description: "Custom cloudformation resource function that returns the current time in Unix time format."
+      Runtime: "nodejs8.10"
+      Timeout: "30"
+      Code:
+        ZipFile:  !Sub |
+          var response = require('cfn-response');
+          exports.handler = function(event, context) {
+              console.log('REQUEST RECEIVED');
+              console.log(event);
+              if (event.RequestType == 'Delete') {
+                  response.send(event, context, response.SUCCESS);
+                  return;
+              }
+              var responseData = {};
+              responseData.Timestamp = Date.now();
+              console.log('Returning timestamp ' + responseData.Timestamp);
+              response.send(event, context, response.SUCCESS, responseData)
+          }
+
+  LookupDateRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": ["lambda.amazonaws.com"] },
+              "Action": ["sts:AssumeRole"]
+            }
+          ]
+        }
+      Path: "/"
+      Policies:
+        -
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                    "logs:DescribeLogStreams"
+                  ],
+                  "Resource": [
+                      "arn:aws:logs:*:*:*"
+                  ]
+                }
+              ]
+            }
+          }
+
+  CreateUpdateCfnStackFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "create_update_cfn_stack.lambda_handler"
+      Role: !GetAtt CreateUpdateCfnStackFunctionRole.Arn
+      Description: "Manages a CloudFormation stack for AWS CodePipeline."
+      Runtime: "python2.7"
+      Timeout: "60"
+      MemorySize: "512"
+      Code:
+        S3Bucket: aws-tc-largeobjects
+        S3Key: AWS-300-RCM/3.0/lambda/CreateUpdateCfnStack.zip
+
+  CreateUpdateCfnStackFunctionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": ["lambda.amazonaws.com"] },
+              "Action": ["sts:AssumeRole"]
+            }
+          ]
+        }
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEC2ContainerServiceFullAccess"
+        - "arn:aws:iam::aws:policy/AWSCodePipelineCustomActionAccess"
+      Policies:
+        -
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:*"
+                  ],
+                  "Resource": [
+                      "arn:aws:logs:*:*:*"
+                  ]
+                },
+                {
+                  "Action": [ "s3:*" ],
+                  "Effect": "Allow",
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "kms:ListKeys",
+                    "kms:ListAliases"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+
+  ManageJenkinsJobFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "index.handler"
+      Role: !GetAtt ManageJenkinsJobFunctionRole.Arn
+      Description: "Creates/Deletes a Jenkins job based on provided job template URL."
+      Runtime: "nodejs8.10"
+      Timeout: "300"
+      MemorySize: "128"
+      Code:
+        S3Bucket: aws-tc-largeobjects
+        S3Key: AWS-300-RCM/3.0/lambda/ManageJenkinsJob.zip
+
+  ManageJenkinsJobFunctionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": ["lambda.amazonaws.com"] },
+              "Action": ["sts:AssumeRole"]
+            }
+          ]
+        }
+      Path: "/"
+      Policies:
+        -
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                    "logs:DescribeLogStreams"
+                  ],
+                  "Resource": [
+                      "arn:aws:logs:*:*:*"
+                  ]
+                }
+              ]
+            }
+          }
+
+  RunSsmCommandFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "run_ssm_cmd.lambda_handler"
+      Role: !GetAtt RunSsmCommandRole.Arn
+      Description: "Runs a provided script on a Linux machine from the provided tag name."
+      Runtime: "python2.7"
+      Timeout: "300"
+      MemorySize: "256"
+      Code:
+        S3Bucket: aws-tc-largeobjects
+        S3Key: AWS-300-RCM/3.0/lambda/RunSsmCommand.zip
+
+  RunSsmCommandRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": ["lambda.amazonaws.com"] },
+              "Action": ["sts:AssumeRole"]
+            }
+          ]
+        }
+      Path: "/"
+      Policies:
+        -
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                    "logs:DescribeLogStreams"
+                  ],
+                  "Resource": [
+                      "arn:aws:logs:*:*:*"
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": ["ec2:Describe*"],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": ["ssm:*"],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+
+Outputs:
+  LookupDateFunctionName:
+    Value: !Ref LookupDateFunction
+    Export:
+      Name: LookupDateFunctionName
+  LookupDateFunctionArn:
+    Value: !GetAtt LookupDateFunction.Arn
+    Export:
+      Name: LookupDateFunctionArn
+  CreateUpdateCfnStackFunctionName:
+    Value: !Ref CreateUpdateCfnStackFunction
+    Export:
+      Name: CreateUpdateCfnStackFunctionName
+  CreateUpdateCfnStackFunctionArn:
+    Value: !GetAtt CreateUpdateCfnStackFunction.Arn
+    Export:
+      Name: CreateUpdateCfnStackFunctionArn
+  ManageJenkinsJobFunctionName:
+    Value: !Ref ManageJenkinsJobFunction
+    Export:
+      Name: ManageJenkinsJobFunctionName
+  ManageJenkinsJobFunctionArn:
+    Value: !GetAtt ManageJenkinsJobFunction.Arn
+    Export:
+      Name: ManageJenkinsJobFunctionArn
+  RunSsmCommandFunctionName:
+    Value: !Ref RunSsmCommandFunction
+    Export:
+      Name: RunSsmCommandFunctionName
+  RunSsmCommandFunctionArn:
+    Value: !GetAtt RunSsmCommandFunction.Arn
+    Export:
+      Name: RunSsmCommandFunctionArn

@@ -1,0 +1,12 @@
+AWS::AutoScaling
+AWS::CloudFormation
+AWS::CodeCommit
+AWS::CodePipeline
+AWS::EC2
+AWS::ECR
+AWS::ECS
+AWS::ElasticLoadBalancingV2
+AWS::IAM
+AWS::Lambda
+AWS::Logs
+AWS::SSM

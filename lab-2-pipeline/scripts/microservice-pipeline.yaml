@@ -1,0 +1,320 @@
+Description: "Running Container-Enabled Microservices on AWS Bootcamp: Lab 2 - Microservice Pipeline CloudFormation Template"
+
+Parameters:
+  MicroserviceName:
+    Type: "String"
+    Description: "The CamelCase name of the microservice"
+    MinLength: 2
+    MaxLength: 32
+    ConstraintDescription: "must be between 2 and 32 characters."
+
+  RepoName:
+    Type: "String"
+    Description: "The lower case name of the microservice"
+    MinLength: 2
+    MaxLength: 32
+    ConstraintDescription: "must be between 2 and 32 characters."
+
+  PortNumber:
+    Type: Number
+    Description: "The port number on the Application Load Balancer for the microservice"
+    MinValue: 8000
+    MaxValue: 9000
+    ConstraintDescription: "must be a number between 8000 and 9000."
+
+  JenkinsPassword:
+    Type: "String"
+    NoEcho: "true"
+    AllowedPattern: "[a-zA-Z0-9]*"
+    Default: ""
+
+  S3BucketName:
+    Type: "String"
+    Description: "Name of the S3 bucket where the source code is stored."
+    Default: ""
+
+  S3PathPrefix:
+    Type: "String"
+    Description: "S3 Path where source and scripts are found for the lab."
+    Default: ""
+
+  LabName:
+    Type: "String"
+    Description: "The name of the lab"
+    ConstraintDescription: "must be a valid lab name."
+    Default: "lab-2-pipeline"
+    AllowedValues:
+      - lab-1-microservices
+      - lab-2-pipeline
+      - lab-3-scale
+      - lab-4-security
+
+  ExtendedFlag:
+    Type: "String"
+    Description: "Set to true if you want to build and extended pipeline"
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "false"
+    ConstraintDescription: "must be a boolean value"
+
+  UseGlobalVars:
+    Type: "String"
+    Description: "Set to true if you want to use global variables"
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    ConstraintDescription: "must be a boolean value"
+
+Conditions:
+  ExtendedPipeline: !Equals [!Ref ExtendedFlag, "true"]
+  SimplePipeline: !Equals [!Ref ExtendedFlag, "false"]
+  GlobalVars: !Equals [!Ref UseGlobalVars, "true"]
+
+Resources:
+
+  ALBListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      LoadBalancerArn: !ImportValue ApplicationLoadBalancer
+      Port: !Ref PortNumber
+      Protocol: "HTTP"
+      DefaultActions:
+        -
+          Type: "forward"
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  ALBTargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+      Port: !Ref PortNumber
+      Protocol: "HTTP"
+      VpcId: !ImportValue VPC
+      Tags:
+        -
+          Key: "Name"
+          Value : !Sub ${MicroserviceName}ALBTargetGroup
+
+  CodeCommitResource:
+    Type: "AWS::CodeCommit::Repository"
+    Properties:
+      RepositoryDescription: !Sub ${MicroserviceName} microservice repository for Container-Enabled Microservices on AWS Bootcamp
+      RepositoryName: !Ref MicroserviceName
+
+  SimpleCodePipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    DependsOn: CodeCommitResource
+    Condition: SimplePipeline
+    Properties:
+      RoleArn: !ImportValue CodePipelineServiceRoleArn
+      Name: !Sub ${MicroserviceName}Pipeline
+      Stages:
+        -
+          Name: "Source"
+          Actions:
+            -
+              Name: "SourceAction"
+              ActionTypeId:
+                Category: "Source"
+                Owner: "AWS"
+                Version: "1"
+                Provider: "CodeCommit"
+              OutputArtifacts:
+                - Name: "SourceOutput"
+              Configuration:
+                RepositoryName: !Ref MicroserviceName
+                BranchName: master
+              RunOrder: 1
+        -
+          Name: "Build"
+          Actions:
+            -
+              Name: "BuildAction"
+              ActionTypeId:
+                Category: "Build"
+                Owner: "Custom"
+                Version: "1"
+                Provider: !ImportValue JenkinsProvider
+              InputArtifacts:
+                - Name: "SourceOutput"
+              OutputArtifacts:
+                - Name: "BuildOutput"
+              Configuration:
+                ProjectName: !Sub ${MicroserviceName}B
+              RunOrder: 1
+        -
+          Name: "Deploy"
+          Actions:
+            -
+              Name: "DeployAction"
+              ActionTypeId:
+                Category: "Invoke"
+                Owner: "AWS"
+                Version: "1"
+                Provider: "Lambda"
+              InputArtifacts:
+                - Name: "BuildOutput"
+              Configuration:
+                FunctionName: !ImportValue CreateUpdateCfnStackFunctionName
+                UserParameters: !Sub |
+                  {
+                    "stack": "${MicroserviceName}Stack",
+                    "template_file": "microservice.yaml",
+                    "input_artifact": "BuildOutput",
+                    "params_file": "cfn_stack_params.json"
+                  }
+              RunOrder: 1
+      ArtifactStore:
+        Type: "S3"
+        Location: !ImportValue CodePipelineBucket
+
+  ExtendedCodePipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    DependsOn: CodeCommitResource
+    Condition: ExtendedPipeline
+    Properties:
+      RoleArn: !ImportValue CodePipelineServiceRoleArn
+      Name: !Sub ${MicroserviceName}PipelineExt
+      Stages:
+        -
+          Name: "Source"
+          Actions:
+            -
+              Name: "SourceAction"
+              ActionTypeId:
+                Category: "Source"
+                Owner: "AWS"
+                Version: "1"
+                Provider: "CodeCommit"
+              OutputArtifacts:
+                - Name: "SourceOutput"
+              Configuration:
+                RepositoryName: !Ref MicroserviceName
+                BranchName: master
+              RunOrder: 1
+        -
+          Name: "Build"
+          Actions:
+            -
+              Name: "BuildAction"
+              ActionTypeId:
+                Category: "Build"
+                Owner: "Custom"
+                Version: "1"
+                Provider: !ImportValue JenkinsProvider
+              InputArtifacts:
+                - Name: "SourceOutput"
+              OutputArtifacts:
+                - Name: "BuildOutput"
+              Configuration:
+                ProjectName: !Sub ${MicroserviceName}B
+              RunOrder: 1
+        -
+          Name: "Deploy"
+          Actions:
+            -
+              Name: "DeployAction"
+              ActionTypeId:
+                Category: "Invoke"
+                Owner: "AWS"
+                Version: "1"
+                Provider: "Lambda"
+              InputArtifacts:
+                - Name: "BuildOutput"
+              OutputArtifacts:
+                - Name: "DeployOutput"
+              Configuration:
+                FunctionName: !ImportValue CreateUpdateCfnStackFunctionName
+                UserParameters: !Sub |
+                  {
+                    "stack": "${MicroserviceName}Stack",
+                    "template_file": "microservice.yaml",
+                    "input_artifact": "BuildOutput",
+                    "output_artifact": "DeployOutput",
+                    "params_file": "cfn_stack_params.json",
+                    "output_file": "postman-collection.json"
+                  }
+              RunOrder: 1
+        -
+          Name: "Test"
+          Actions:
+            -
+              Name: "TestAction"
+              ActionTypeId:
+                Category: "Test"
+                Owner: "Custom"
+                Version: "1"
+                Provider: !ImportValue JenkinsProvider
+              InputArtifacts:
+                - Name: "DeployOutput"
+              Configuration:
+                ProjectName: !Sub ${MicroserviceName}T
+              RunOrder: 1
+      ArtifactStore:
+        Type: "S3"
+        Location: !ImportValue CodePipelineBucket
+
+  JenkinsBuildJobResource:
+    Type: "Custom::JenkinsBuildJobResource"
+    Properties:
+      ServiceToken: !ImportValue ManageJenkinsJobFunctionArn
+      JenkinsHostname: !Sub
+        - ${DnsName}/jenkins
+        - DnsName: !ImportValue ALBDnsName
+      JenkinsUsername: "admin"
+      JenkinsPassword: !If [ GlobalVars, !ImportValue JenkinsPassword, !Ref JenkinsPassword]
+      JenkinsJobTemplate: {"Fn::If": [ GlobalVars, {"Fn::Sub": ["https://${S3BucketName}.s3.amazonaws.com/${S3PathPrefix}/scripts/jenkins-build-job-config.xml", { S3BucketName: { "Fn::ImportValue": S3BucketName}, S3PathPrefix: { "Fn::ImportValue": S3PathPrefix }, LabName: { "Fn::ImportValue": LabName }}]}, {"Fn::Sub": "https://${S3BucketName}.s3.amazonaws.com/${S3PathPrefix}/scripts/jenkins-build-job-config.xml"}]}
+      JenkinsJobName: !Sub ${MicroserviceName}B
+      ConfigParameters:
+        -
+          ParameterKey: "{{REPO_NAME}}"
+          ParameterValue: !Ref RepoName
+        -
+          ParameterKey: "{{ACTION_TYPE_PROVIDER}}"
+          ParameterValue: !ImportValue JenkinsProvider
+        -
+          ParameterKey: "{{PROJECT_NAME}}"
+          ParameterValue: !Sub ${MicroserviceName}B
+        -
+          ParameterKey: "{{AWS_REGION}}"
+          ParameterValue: !Ref "AWS::Region"
+        -
+          ParameterKey: "{{AWS_ACCOUNT_ID}}"
+          ParameterValue: !Ref "AWS::AccountId"
+        -
+          ParameterKey: "{{CFN_STACK_PARAMS}}"
+          ParameterValue: !Sub "[{ \"ParameterKey\": \"TargetGroupArn\", \"ParameterValue\": \"${ALBTargetGroup}\" }, { \"ParameterKey\": \"ImageTag\", \"ParameterValue\": \"{{IMAGE_TAG}}\" }]"
+
+  JenkinsTestJobResource:
+    Type: "Custom::JenkinsTestJobResource"
+    Condition: ExtendedPipeline
+    Properties:
+      ServiceToken: !ImportValue ManageJenkinsJobFunctionArn
+      JenkinsHostname: !Sub
+        - ${DnsName}/jenkins
+        - DnsName: !ImportValue ALBDnsName
+      JenkinsUsername: "admin"
+      JenkinsPassword: !If [ GlobalVars, !ImportValue JenkinsPassword, !Ref JenkinsPassword]
+      JenkinsJobTemplate: {"Fn::If": [ GlobalVars, {"Fn::Sub": ["https://${S3BucketName}.s3.amazonaws.com/${S3PathPrefix}/scripts/jenkins-test-job-config.xml", { S3BucketName: { "Fn::ImportValue": S3BucketName}, S3PathPrefix: { "Fn::ImportValue": S3PathPrefix }, LabName: { "Fn::ImportValue": LabName }}]}, {"Fn::Sub": "https://${S3BucketName}.s3.amazonaws.com/${S3PathPrefix}/scripts/jenkins-test-job-config.xml"}]}
+      JenkinsJobName: !Sub ${MicroserviceName}T
+      ConfigParameters:
+        -
+          ParameterKey: "{{ACTION_TYPE_PROVIDER}}"
+          ParameterValue: !ImportValue JenkinsProvider
+        -
+          ParameterKey: "{{PROJECT_NAME}}"
+          ParameterValue: !Sub ${MicroserviceName}T
+        -
+          ParameterKey: "{{AWS_REGION}}"
+          ParameterValue: !Ref "AWS::Region"
+        -
+          ParameterKey: "{{POSTMAN_COLLECTION_FILE}}"
+          ParameterValue: "postman-collection.json"
+        -
+          ParameterKey: "{{TEST_URL}}"
+          ParameterValue: !Sub
+            - http://${DnsName}:${PortNumber}
+            - DnsName: !ImportValue ALBDnsName

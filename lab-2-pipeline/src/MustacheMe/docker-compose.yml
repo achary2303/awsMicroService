@@ -1,0 +1,15 @@
+webserver:
+    build: ./MustacheMeWebServer
+    links:
+        - info:info
+        - processor:processor
+    ports:
+        - "8000:8000"
+info:
+    build: ./MustacheMeInfo
+    ports:
+        - "8092"
+processor:
+    build: ./MustacheMeProcessor
+    ports:
+        - "8082"

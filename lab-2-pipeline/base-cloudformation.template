@@ -1,0 +1,203 @@
+Description: "Running Container-Enabled Microservices on AWS Bootcamp: Lab 2 - Base CloudFormation Template"
+Parameters:
+  JenkinsInstanceType:
+    Type: "String"
+    Description: "Jenkins instance type"
+    Default: "t2.medium"
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+    ConstraintDescription: "must be a valid t2 instance type."
+
+  CLIInstanceType:
+    Type: "String"
+    Description: "CLI instance type"
+    Default: "t2.small"
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+    ConstraintDescription: "must be a valid t2 instance type."
+
+  ECSInstanceType:
+    Type: "String"
+    Description: "ECS instance type"
+    Default: "t2.small"
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+    ConstraintDescription: "must be a valid t2 instance type."
+
+  SourceCidr:
+    Type: "String"
+    Description: "Optional - CIDR/IP range for instance outside access - defaults to 0.0.0.0/0"
+    Default: "0.0.0.0/0"
+
+  KeyName:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Description: "Name of an existing EC2 KeyPair to enable SSH access to the EC2 instances."
+
+  TrgBucketName:
+    Type: "String"
+    Description: "Name of the S3 bucket where the source code is stored."
+    Default: "-tcprod"
+
+  S3PathPrefix:
+    Type: "String"
+    Description: "S3 Path where source and scripts are found for the lab."
+    Default: courses/ILT-DD-300-CORCEM/v3.3.1/lab-2-pipeline
+
+  LabName:
+    Type: "String"
+    Description: "The name of the lab"
+    ConstraintDescription: "must be a valid lab name."
+    Default: "lab-2-pipeline"
+    AllowedValues:
+      - lab-1-microservices
+      - lab-2-pipeline
+      - lab-3-scale
+      - lab-4-security
+
+  AdministratorPassword:
+    Type: "String"
+    NoEcho: "true"
+    MinLength: "5"
+    MaxLength: "41"
+    AllowedPattern: "[a-zA-Z0-9]*"
+    Default: "9182kej"
+
+Resources:
+  NetworkStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub https://${AWS::Region}${TrgBucketName}.s3.amazonaws.com/courses/ILT-DD-300-CORCEM/v3.3.1/lab-2-pipeline/scripts/network.yaml
+      TimeoutInMinutes: 10
+      Tags:
+        -
+          Key: "StackType"
+          Value: "Network"
+        -
+          Key: "LabName"
+          Value: !Ref LabName
+
+  LambdaStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub https://${AWS::Region}${TrgBucketName}.s3.amazonaws.com/courses/ILT-DD-300-CORCEM/v3.3.1/lab-2-pipeline/scripts/lambda-functions.yaml
+      TimeoutInMinutes: 10
+      Parameters:
+        LabName: !Ref LabName
+        S3BucketName: !Sub ${AWS::Region}${TrgBucketName}
+        S3PathPrefix: !Ref S3PathPrefix
+      Tags:
+        -
+          Key: "StackType"
+          Value: "Lambda"
+        -
+          Key: "LabName"
+          Value: !Ref LabName
+
+  DeliveryPipelineMainStack:
+    Type: "AWS::CloudFormation::Stack"
+    DependsOn:
+      - NetworkStack
+      - LambdaStack
+    Properties:
+      TemplateURL: !Sub https://${AWS::Region}${TrgBucketName}.s3.amazonaws.com/courses/ILT-DD-300-CORCEM/v3.3.1/lab-2-pipeline/scripts/delivery-pipeline-main.yaml
+      TimeoutInMinutes: 10
+      Tags:
+        -
+          Key: "StackType"
+          Value: "DeliveryPipelineMain"
+        -
+          Key: "LabName"
+          Value: !Ref LabName
+
+  EcsClusterStack:
+    Type: "AWS::CloudFormation::Stack"
+    DependsOn: NetworkStack
+    Properties:
+      TemplateURL: !Sub https://${AWS::Region}${TrgBucketName}.s3.amazonaws.com/courses/ILT-DD-300-CORCEM/v3.3.1/lab-2-pipeline/scripts/ecs-cluster.yaml
+      TimeoutInMinutes: 15
+      Parameters:
+        KeyName: !Ref KeyName
+        SourceCidr: !Ref SourceCidr
+        InstanceType: !Ref ECSInstanceType
+      Tags:
+        -
+          Key: "StackType"
+          Value: "EcsCluster"
+        -
+          Key: "LabName"
+          Value: !Ref LabName
+
+  CLIInstanceStack:
+    Type: "AWS::CloudFormation::Stack"
+    DependsOn: NetworkStack
+    Properties:
+      TemplateURL: !Sub https://${AWS::Region}${TrgBucketName}.s3.amazonaws.com/courses/ILT-DD-300-CORCEM/v3.3.1/lab-2-pipeline/scripts/cli-instance.yaml
+      TimeoutInMinutes: 15
+      Parameters:
+        KeyName: !Ref KeyName
+        SourceCidr: !Ref SourceCidr
+        InstanceType: !Ref CLIInstanceType
+        LabName: !Ref LabName
+        S3BucketName: !Sub ${AWS::Region}${TrgBucketName}
+        S3PathPrefix: !Ref S3PathPrefix
+      Tags:
+        -
+          Key: "StackType"
+          Value: "CLIInstance"
+        -
+          Key: "LabName"
+          Value: !Ref LabName
+
+  JenkinsStack:
+    Type: "AWS::CloudFormation::Stack"
+    DependsOn:
+      - NetworkStack
+      - DeliveryPipelineMainStack
+    Properties:
+      TemplateURL: !Sub https://${AWS::Region}${TrgBucketName}.s3.amazonaws.com/courses/ILT-DD-300-CORCEM/v3.3.1/lab-2-pipeline/scripts/jenkins-full-stack.yaml
+      TimeoutInMinutes: 15
+      Parameters:
+        KeyName: !Ref KeyName
+        SourceCidr: !Ref SourceCidr
+        InstanceType: !Ref JenkinsInstanceType
+        LabName: !Ref LabName
+        S3BucketName: !Sub ${AWS::Region}${TrgBucketName}
+        S3PathPrefix: !Ref S3PathPrefix
+        AdministratorPassword: !Ref AdministratorPassword
+        BuildJenkinsFlag: "false"
+      Tags:
+        -
+          Key: "StackType"
+          Value: "Jenkins"
+        -
+          Key: "LabName"
+          Value: !Ref LabName
+
+Outputs:
+  JenkinsURL:
+    Value: !Sub
+      - http://${ALBDnsName}/jenkins/
+      - ALBDnsName: !GetAtt
+        - NetworkStack
+        - Outputs.ALBDnsName
+  MustacheMeURL:
+    Value: !Sub
+      - http://${ALBDnsName}:8000/
+      - ALBDnsName: !GetAtt [NetworkStack, Outputs.ALBDnsName]
+  CLIInstanceDnsName:
+    Value: !GetAtt
+      - CLIInstanceStack
+      - Outputs.PublicDnsName
+  KeyName:
+    Value: !Ref KeyName
+    Export:
+      Name: KeyName

@@ -1,0 +1,208 @@
+Description: "Running Container-Enabled Microservices on AWS Bootcamp: Lab 2 - Delivery Pipeline Main CloudFormation Template"
+Resources:
+  CodePipelineBucket:
+    Type: "AWS::S3::Bucket"
+    DeletionPolicy: Retain
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+
+  CodePipelineServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": ["codepipeline.amazonaws.com"] },
+              "Action": ["sts:AssumeRole"]
+            }
+          ]
+        }
+      Path: "/"
+      Policies:
+        -
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:GetObjectVersion",
+                    "s3:GetBucketVersioning"
+                  ],
+                  "Resource": "*",
+                  "Effect": "Allow"
+                },
+                {
+                  "Action": [
+                    "s3:PutObject"
+                  ],
+                  "Resource": [
+                    "arn:aws:s3:::codepipeline*",
+                    "arn:aws:s3:::elasticbeanstalk*",
+                    { "Fn::Join": [ "", [ "arn:aws:s3:::", { "Ref": "CodePipelineBucket" }, "*" ]] }
+
+                  ],
+                  "Effect": "Allow"
+                },
+                {
+                  "Action": [
+                    "elasticbeanstalk:*",
+                    "ec2:*",
+                    "elasticloadbalancing:*",
+                    "autoscaling:*",
+                    "cloudwatch:*",
+                    "s3:*",
+                    "sns:*",
+                    "cloudformation:*",
+                    "rds:*",
+                    "sqs:*",
+                    "ecs:*",
+                    "iam:PassRole"
+                  ],
+                  "Resource": "*",
+                  "Effect": "Allow"
+                },
+                {
+                  "Action": [
+                      "codecommit:GetBranch",
+                      "codecommit:GetCommit",
+                      "codecommit:UploadArchive",
+                      "codecommit:GetUploadArchiveStatus",
+                      "codecommit:CancelUploadArchive"
+                            ],
+                  "Resource": "*",
+                  "Effect": "Allow"
+                },
+                {
+                  "Action": [
+                    "lambda:InvokeFunction",
+                    "lambda:ListFunctions"
+                  ],
+                  "Resource": "*",
+                  "Effect": "Allow"
+                }
+              ]
+            }
+          }
+
+  DateInfo:
+    Type: "Custom::DateInfo"
+    Properties:
+      ServiceToken: !ImportValue LookupDateFunctionArn
+
+  JenkinsBuildActionType:
+    Type: "AWS::CodePipeline::CustomActionType"
+    Properties:
+      Category: Build
+      Provider: !Sub
+        - MyJenkins-${Timestamp}
+        - Timestamp: !GetAtt DateInfo.Timestamp
+      Version: "1"
+      ConfigurationProperties:
+        -
+          Description: "The name of the build project must be provided when this action is added to the pipeline."
+          Key: true
+          Name: ProjectName
+          Queryable: true
+          Required: true
+          Secret: false
+          Type: String
+      InputArtifactDetails:
+        MaximumCount: "5"
+        MinimumCount: "0"
+      OutputArtifactDetails:
+        MaximumCount: "5"
+        MinimumCount: "0"
+      Settings:
+        EntityUrlTemplate: !Sub
+          - http://${DnsName}/jenkins/job/{Config:ProjectName}/
+          - DnsName: !ImportValue ALBDnsName
+        ExecutionUrlTemplate: !Sub
+          - http://${DnsName}/jenkins/job/{Config:ProjectName}/{ExternalExecutionId}/
+          - DnsName: !ImportValue ALBDnsName
+
+  JenkinsTestActionType:
+    Type: "AWS::CodePipeline::CustomActionType"
+    Properties:
+      Category: Test
+      Provider: !Sub
+        - MyJenkins-${Timestamp}
+        - Timestamp: !GetAtt DateInfo.Timestamp
+      Version: "1"
+      ConfigurationProperties:
+        -
+          Description: "The name of the test project must be provided when this action is added to the pipeline."
+          Key: true
+          Name: ProjectName
+          Queryable: true
+          Required: true
+          Secret: false
+          Type: String
+      InputArtifactDetails:
+        MaximumCount: "5"
+        MinimumCount: "0"
+      OutputArtifactDetails:
+        MaximumCount: "5"
+        MinimumCount: "0"
+      Settings:
+        EntityUrlTemplate: !Sub
+          - http://${DnsName}/jenkins/job/{Config:ProjectName}/
+          - DnsName: !ImportValue ALBDnsName
+        ExecutionUrlTemplate: !Sub
+          - http://${DnsName}/jenkins/job/{Config:ProjectName}/{ExternalExecutionId}/
+          - DnsName: !ImportValue ALBDnsName
+
+  ECSServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        {
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ecs.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        }
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceRole"
+
+Outputs:
+  JenkinsProvider:
+    Description: "Name of the Jenkins CodePipeline provider"
+    Value: !Sub
+        - MyJenkins-${Timestamp}
+        - Timestamp: !GetAtt DateInfo.Timestamp
+    Export:
+      Name: JenkinsProvider
+
+  CodePipelineBucket:
+    Description: "Name of the S3 bucket for CodePipeline"
+    Value: !Ref CodePipelineBucket
+    Export:
+      Name: CodePipelineBucket
+
+  CodePipelineServiceRoleArn:
+    Description: The IAM role ARN of the CodePipeline service
+    Value: !GetAtt CodePipelineServiceRole.Arn
+    Export:
+      Name: CodePipelineServiceRoleArn
+
+  ECSServiceRoleArn:
+    Value: !GetAtt ECSServiceRole.Arn
+    Export:
+      Name: ECSServiceRoleArn

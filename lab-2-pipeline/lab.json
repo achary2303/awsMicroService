@@ -1,0 +1,39 @@
+{
+    "Description": {
+        "en_us": "During this one-day boot camp, you will learn how to use Amazon Web Services to architect, deploy, run, and manage applications constructed from a collection of containerized micro-services. You will be leveraging Docker to build containers and EC2 Container Service (Amazon ECS) to deploy and run these containers. You will also learn how to integrate other AWS services with your microservices architecture such as Elastic Load Balancers, Cloudwatch monitoring, and a third-party solution, HashiCorps Consul, for Service Discovery.",
+        "ja_jp": "このコースでは、アマゾン ウェブ サービスを使用して、コンテナ化されたマイクロサービスの集合体から構築されたアプリケーションの設計、デプロイ、実行、および管理を行う方法について学習します。Docker を活用してコンテナをビルドしたり、EC2 Container Service (Amazon ECS) を活用してこのコンテナをデプロイおよび実行したりします。Elastic Load Balancing や Cloudwatch モニタリングなどの AWS の他のサービスや、HashiCorps Consul などのサービスディスカバリ用のサードパーティーソリューションとマイクロサービスアーキテクチャを統合する方法についても学習します。",
+        "ko_kr":  "본 일일 과정에서는 Amazon Web Services를 사용하여 컨테이너 기반 마이크로 서비스 집합으로 구성된 애플리케이션의 설계, 배포, 실행 및 관리 방법을 알아봅니다. Docker를 활용하여 컨테이너를 구축하고, EC2 Container Service(Amazon ECS)를 사용하여 구축한 컨테이너를 배포, 실행하게 됩니다. 또한, 서비스 검색을 위해 다른 AWS 서비스를 Elastic Load Balancers, Cloudwatch 모니터링, 타사 솔루션인 HashiCorps Consul 등과 같은 마이크로 서비스 아키텍처와 통합하는 방법을 배웁니다."
+    },
+    "ExcludeFiles": [
+        "required_services/*",
+        ".gitignore",
+        ".gitattributes",
+        "lab.json"
+    ],
+    "AccountPool": "aws_vpc",
+    "LinkedMedia": [
+        {}
+    ],
+    "ExtensionProperties": {
+        "allow_aws_vpc_deletion": "false",
+        "allow_aws_subnet_deletion": "false"
+    },
+    "Regions": [
+        "us-west-2"
+    ],
+    "DefaultRegion" : "us-west-2",
+    "StudentConnectivity": {
+        "SSH": "True",
+        "RDP": "False",
+        "Console": "True",
+        "AccessKeys": "True"
+    },
+    "Cost": "10 credits",
+    "Duration": "2 hours",
+    "Name": {
+        "en_us": "Running Container-Enabled Microservices on AWS - Lab 2 - Pipeline",
+        "ja_jp": "Running Container-Enabled Microservices on AWS - ラボ 2 - パイプライン",
+        "ko_kr": "Running Container-Enabled Microservices on AWS – 실습 2 – 파이프라인"
+
+    }
+}
